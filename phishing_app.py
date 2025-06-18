@@ -7,10 +7,38 @@ import numpy as np
 import nltk
 import gdown
 
+from sklearn.pipeline import Pipeline
+from sklearn.compose import ColumnTransformer
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import StandardScaler
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.ensemble import RandomForestClassifier
+
 nltk.download("vader_lexicon")
 from nltk.sentiment.vader import SentimentIntensityAnalyzer
 
-# Download model from Google Drive if not already present
+# === Recreate the training pipeline structure ===
+text_feature = "email_text"
+numeric_features = [
+    "Log_Sender_Length", "Sentiment_Score", "Phishing_Keyword_Count",
+    "Contains_Phish_Keywords", "Is_Free_Email", "Is_Disposable_Email",
+    "Has_Suspicious_Chars", "URL_x_Keyword"
+]
+
+preprocessor = ColumnTransformer([
+    ("tfidf", TfidfVectorizer(max_features=3000), text_feature),
+    ("num", Pipeline([
+        ("imputer", SimpleImputer(strategy='mean')),
+        ("scaler", StandardScaler())
+    ]), numeric_features)
+])
+
+pipeline = Pipeline([
+    ("preprocessor", preprocessor),
+    ("classifier", RandomForestClassifier())
+])
+
+# === Download model from Google Drive if not already present ===
 model_path = "phishing_detection_random_tuned.joblib"
 file_id = "1UbPPC3XoxMuOeHp0Rfa4QVCNJL0FUpr-"  # Replace with your actual file ID
 url = f"https://drive.google.com/uc?id={file_id}"
@@ -19,23 +47,21 @@ if not os.path.exists(model_path):
     with st.spinner("Downloading model file..."):
         gdown.download(url, model_path, quiet=False)
 
-# Load model
+# === Load model ===
 model = joblib.load(model_path)
 
-# Phishing-related keywords list
+# === Define phishing keywords and sentiment analyzer ===
 phishing_keywords = ["verify", "login", "password", "urgent", "account", "update", "click", "security"]
-
-# Initialize sentiment analyzer
 sia = SentimentIntensityAnalyzer()
 
-# App UI
+# === Streamlit UI ===
 st.title("📧 Phishing Email Detection")
 st.subheader("Paste your email content below:")
 
 email_text = st.text_area("Email Text", height=200)
 sender_address = st.text_input("Sender Email Address")
 
-# Feature extraction
+# === Feature extraction ===
 def extract_features(email_text, sender_address):
     sender_length = len(sender_address)
     sentiment_score = sia.polarity_scores(email_text)["compound"]
@@ -59,7 +85,7 @@ def extract_features(email_text, sender_address):
         "URL_x_Keyword": url_x_keyword
     }])
 
-# Predict
+# === Prediction logic ===
 if st.button("Detect Phishing"):
     if email_text.strip() and sender_address.strip():
         features_df = extract_features(email_text, sender_address)
